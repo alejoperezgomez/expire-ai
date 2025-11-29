@@ -1,0 +1,44 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id        String     @id @default(uuid())
+  pushToken String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  foodItems FoodItem[]
+}
+
+model FoodItem {
+  id             String   @id @default(uuid())
+  name           String
+  purchaseDate   DateTime
+  expirationDate DateTime
+  isEstimated    Boolean  @default(true)
+  imageUrl       String?
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId])
+  @@index([expirationDate])
+}
+
+model NotificationLog {
+  id         String   @id @default(uuid())
+  foodItemId String
+  type       String   // 'three_day' | 'one_day' | 'expiry_day'
+  sentAt     DateTime @default(now())
+
+  @@unique([foodItemId, type])
+}
