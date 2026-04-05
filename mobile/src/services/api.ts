@@ -18,7 +18,7 @@ import {
 // For Android emulator: use 10.0.2.2
 // For physical device: use your computer's IP address (e.g., 192.168.1.x)
 const API_BASE_URL = __DEV__
-    ? 'http://192.168.1.146:3005/api'  // Using local network IP for physical device
+    ? 'http://localhost:3005/api'  // Using local network IP for physical device
     : 'https://your-production-url.com/api';
 
 // Request timeout in milliseconds
