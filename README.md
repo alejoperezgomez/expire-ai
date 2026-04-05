@@ -1,60 +1,73 @@
-# FoodTracker
+# Expiria
 
-A mobile application for tracking food expiration dates using AI-powered receipt scanning. Built with React Native (Expo) and Express.js.
+A mobile app for tracking food expiration dates using AI-powered receipt scanning. Built with React Native (Expo), Tamagui, and Express.js.
 
 ## Overview
 
-FoodTracker helps users reduce food waste by tracking expiration dates of purchased items. Simply scan your shopping receipt, and the app uses a multimodal LLM to extract food items and estimate expiration dates. Get timely notifications before items expire, with a color-coded card interface for quick visual assessment.
+Expiria helps users reduce food waste by tracking expiration dates of purchased items. Scan your shopping receipt and the app uses a multimodal LLM to extract food items and estimate expiration dates. Get timely notifications before items expire, with a pastel traffic-light card interface for quick visual assessment.
+
+## Design System
+
+The visual identity is anchored in the adaptive icon — a flat, thick-outlined apple with a clock and leaf in sage greens, warm cream, and terracotta on a soft white plate. Every UI decision flows from this icon's mood: calm, friendly, organic pastels with squircle shapes and generous spacing.
+
+### Color Palette
+
+| Role | Hex | Usage |
+|------|-----|-------|
+| Primary Ink | `#2E4C38` | Text, strokes, strong UI chrome |
+| Primary Surface | `#A8BFA8` | Screen backgrounds, headers, tab bar |
+| Secondary Surface | `#FAF0E6` | Cards, secondary panels |
+| Accent | `#C07850` | CTAs, time-related UI |
+| Canvas | `#FDFCFA` | Light fills, button text on dark bg |
+
+The design system is documented in `design-system/expiria/MASTER.md` and implemented as a centralized Tamagui theme module at `mobile/src/theme/`.
 
 ## Features
 
-- 📸 **Receipt Scanning**: Capture shopping receipts with your phone camera
-- 🤖 **AI-Powered Extraction**: Automatically extract food items and estimate expiration dates
-- 🚦 **Traffic Light Status**: Visual indicators (green/yellow/red) for food freshness
-- 📅 **Manual Date Adjustment**: Edit expiration dates or scan product labels for accurate dates
-- 🔔 **Smart Notifications**: Receive alerts 3 days, 1 day, and on expiration day
-- 💾 **Offline Support**: Queue changes when offline and sync when connected
-- 📱 **Cross-Platform**: Works on iOS and Android
+- 📸 Receipt Scanning — capture receipts with your phone camera
+- 🤖 AI-Powered Extraction — automatically extract food items and estimate expiration dates
+- 🚦 Traffic Light Status — pastel green/yellow/red badges for food freshness
+- 📅 Manual Date Adjustment — edit dates or scan product labels for accuracy
+- 🔔 Smart Notifications — alerts at 3 days, 1 day, and on expiration day
+- 💾 Offline Support — queue changes when offline, sync when connected
+- 📱 Cross-Platform — iOS and Android via Expo
 
 ## Tech Stack
 
 ### Mobile App
-- React Native (Expo)
+- React Native (Expo SDK 54)
 - TypeScript
+- Tamagui (theme tokens, styled components)
 - Expo Router (file-based navigation)
-- Expo Camera
-- Expo Notifications
+- Expo Camera / Notifications
 - AsyncStorage
 
 ### Backend
-- Express.js
-- TypeScript
-- Prisma ORM
-- SQLite (development) / PostgreSQL (production)
+- Express.js + TypeScript
+- Prisma ORM + SQLite (dev) / PostgreSQL (prod)
 - OpenAI GPT-4 Vision API
 - Expo Push Notifications
 
 ## Project Structure
 
 ```
-food-expiration-tracker/
+expiria/
+├── design-system/expiria/  # MASTER.md design system
 ├── mobile/                 # React Native mobile app
 │   ├── src/
 │   │   ├── app/           # Expo Router screens
 │   │   ├── components/    # Reusable UI components
 │   │   ├── hooks/         # Custom React hooks
 │   │   ├── services/      # API client and storage
+│   │   ├── theme/         # Tamagui tokens, themes, config
 │   │   ├── types/         # TypeScript type definitions
 │   │   └── utils/         # Utility functions
 │   └── package.json
-│
 └── server/                # Express backend
     ├── src/
     │   ├── routes/        # API route handlers
-    │   ├── controllers/   # Business logic
     │   ├── services/      # External service integrations
-    │   ├── middleware/    # Express middleware
-    │   └── types/         # TypeScript type definitions
+    │   └── middleware/     # Express middleware
     ├── prisma/            # Database schema and migrations
     └── package.json
 ```
@@ -70,94 +83,48 @@ food-expiration-tracker/
 
 ### Backend Setup
 
-1. Navigate to the server directory:
-   ```bash
-   cd server
-   ```
+```bash
+cd server
+npm install
+cp .env.example .env
+# Add your OPENAI_API_KEY to .env
+npx prisma migrate dev
+npm run dev
+```
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Create a `.env` file:
-   ```bash
-   cp .env.example .env
-   ```
-
-4. Add your OpenAI API key to `.env`:
-   ```
-   OPENAI_API_KEY=your_api_key_here
-   DATABASE_URL="file:./prisma/dev.db"
-   PORT=3000
-   ```
-
-5. Run database migrations:
-   ```bash
-   npx prisma migrate dev
-   ```
-
-6. Start the development server:
-   ```bash
-   npm run dev
-   ```
-
-The backend will be running at `http://localhost:3000`.
+The backend runs at `http://localhost:3000`.
 
 ### Mobile App Setup
 
-1. Navigate to the mobile directory:
-   ```bash
-   cd mobile
-   ```
+```bash
+cd mobile
+npm install
+npx expo start
+```
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+Press `i` for iOS Simulator, `a` for Android Emulator, or scan the QR code with Expo Go.
 
-3. Update the API URL in `src/services/api.ts` if needed (default: `http://localhost:3000`).
-
-4. Start the Expo development server:
-   ```bash
-   npx expo start
-   ```
-
-5. Run on your device:
-   - Press `i` for iOS Simulator
-   - Press `a` for Android Emulator
-   - Scan QR code with Expo Go app on physical device
+Update the API URL in `src/services/api.ts` if needed.
 
 ## Usage
 
 ### Scanning a Receipt
 
-1. Tap the **Scan** tab in the bottom navigation
-2. Grant camera permissions if prompted
-3. Point your camera at a shopping receipt
-4. Tap the capture button
-5. Review extracted items and estimated expiration dates
-6. Edit or remove items as needed
-7. Tap **Save Items** to add them to your tracker
+1. Tap the Scan tab
+2. Point your camera at a shopping receipt and capture
+3. Review extracted items and estimated expiration dates
+4. Edit or remove items as needed, then save
 
 ### Managing Food Items
 
-- **View All Items**: Home tab shows all food items sorted by expiration date
-- **Edit Expiration Date**: Tap a food card → Edit date manually or scan product label
-- **Delete Item**: Swipe left on a card or tap delete in detail view
-- **Check Status**: 
-  - 🟢 Green: More than 3 days until expiration
-  - 🟡 Yellow: 1-3 days until expiration
-  - 🔴 Red: Expired or expires today
+- Home tab shows all items sorted by expiration date
+- Tap a card to edit the expiration date or scan a product label
+- Swipe or tap delete to remove items
+- Status badges: 🟢 3+ days, 🟡 1-3 days, 🔴 expired/today
 
 ### Notifications
 
-The app sends push notifications:
-- 3 days before expiration
-- 1 day before expiration
-- On expiration day
-
-Tap a notification to view the specific food item.
+Push notifications fire at 3 days, 1 day, and on expiration day. Tap to view the item.
 
 ## API Endpoints
 
@@ -171,61 +138,6 @@ Tap a notification to view the specific food item.
 | POST | `/api/scan/receipt` | Process receipt image |
 | POST | `/api/scan/label` | Process product label image |
 | POST | `/api/notifications/register` | Register push token |
-
-## Database Schema
-
-```prisma
-model User {
-  id            String      @id @default(uuid())
-  pushToken     String?
-  foodItems     FoodItem[]
-}
-
-model FoodItem {
-  id              String      @id @default(uuid())
-  name            String
-  purchaseDate    DateTime
-  expirationDate  DateTime
-  isEstimated     Boolean     @default(true)
-  userId          String
-}
-
-model NotificationLog {
-  id            String      @id @default(uuid())
-  foodItemId    String
-  type          String
-  sentAt        DateTime    @default(now())
-}
-```
-
-## Development
-
-### Running Tests
-
-Backend tests:
-```bash
-cd server
-npm test
-```
-
-Mobile tests:
-```bash
-cd mobile
-npm test
-```
-
-### Database Management
-
-View database in Prisma Studio:
-```bash
-cd server
-npx prisma studio
-```
-
-Create a new migration:
-```bash
-npx prisma migrate dev --name migration_name
-```
 
 ## Troubleshooting
 
@@ -244,20 +156,6 @@ npx prisma migrate dev --name migration_name
 - Check that push token is registered with backend
 - Verify cron job is running (backend logs)
 
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
 ## License
 
-This project is licensed under the MIT License.
-
-## Acknowledgments
-
-- OpenAI GPT-4 Vision for receipt and label scanning
-- Expo team for the excellent mobile development platform
-- Prisma for the type-safe database toolkit
+MIT
