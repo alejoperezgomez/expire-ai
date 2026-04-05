@@ -41,3 +41,5 @@ mobile/node_modules/
 server/node_modules/
 server/prisma/*.db
 server/prisma/*.db-journal
+.kiro/specs/expiria-visual-overhaul/tasks.md
+.kiro/*
