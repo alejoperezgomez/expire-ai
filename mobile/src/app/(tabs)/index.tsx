@@ -43,7 +43,7 @@ export default function HomeScreen() {
     // Loading state
     if (isLoading) {
         return (
-            <SafeAreaView style={[styles.container, { backgroundColor: colors.canvas }]} edges={['bottom']}>
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.canvas }]} edges={[]}>
                 <LoadingSpinner message="Loading your food items..." />
             </SafeAreaView>
         );
@@ -52,7 +52,7 @@ export default function HomeScreen() {
     // Error state
     if (error) {
         return (
-            <SafeAreaView style={[styles.container, { backgroundColor: colors.canvas }]} edges={['bottom']}>
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.canvas }]} edges={[]}>
                 <View style={styles.errorContainer}>
                     <Text style={[styles.errorText, { color: colors.statusRedText }]}>{error}</Text>
                 </View>
@@ -61,7 +61,7 @@ export default function HomeScreen() {
     }
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.canvas }]} edges={['bottom']}>
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.canvas }]} edges={[]}>
             <OfflineIndicator pendingCount={pendingOperations} />
             <FoodCardList
                 items={items}

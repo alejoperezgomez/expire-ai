@@ -20,7 +20,7 @@ export default function ProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.canvas }]} edges={['bottom']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.canvas }]} edges={[]}>
       <ScrollView
         style={[styles.scroll, { backgroundColor: colors.canvas }]}
         contentContainerStyle={styles.content}
