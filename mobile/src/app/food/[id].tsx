@@ -22,6 +22,16 @@ import * as api from '../../services/api';
 import { expiria } from '../../theme';
 import { useThemeColors } from '../../context/ThemeContext';
 
+const CATEGORY_EMOJI: Record<string, string> = {
+    'Dairy': '🥛', 'Produce': '🥬', 'Meat': '🍗', 'Seafood': '🐟',
+    'Pantry': '🫙', 'Frozen': '❄️', 'Beverage': '🧃', 'Bakery': '🍞',
+    'Leftovers': '🍱', 'Condiments': '🥫',
+};
+
+const STATUS_HERO_COLOR: Record<string, string> = {
+    green: '#4a8840', yellow: '#b07d00', red: '#c85e28', expired: '#c0392b',
+};
+
 export default function FoodDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const router = useRouter();
@@ -33,46 +43,40 @@ export default function FoodDetailScreen() {
     const [expirationDate, setExpirationDate] = useState<Date>(new Date());
     const [hasChanges, setHasChanges] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [confirmed, setConfirmed] = useState<'used' | 'discarded' | null>(null);
 
-    // Find the current item
     const item = items.find(i => i.id === id);
 
-    // Initialize expiration date when item loads
     useEffect(() => {
         if (item) {
             setExpirationDate(new Date(item.expirationDate));
         }
     }, [item?.expirationDate]);
 
-    // Handle expiration date change
     const handleDateChange = useCallback((date: Date) => {
         setExpirationDate(date);
         setHasChanges(true);
     }, []);
 
-    // Save changes
     const handleSave = useCallback(async () => {
         if (!item || !hasChanges) return;
-
         setIsSaving(true);
         try {
             await updateItem(item.id, {
                 expirationDate: expirationDate.toISOString(),
-                isEstimated: false, // Mark as user-set when manually changed
+                isEstimated: false,
             });
             setHasChanges(false);
             Alert.alert('Saved', 'Expiration date updated successfully.');
-        } catch (err) {
+        } catch {
             Alert.alert('Error', 'Failed to save changes. Please try again.');
         } finally {
             setIsSaving(false);
         }
     }, [item, hasChanges, expirationDate, updateItem]);
 
-    // Handle delete
     const handleDelete = useCallback(() => {
         if (!item) return;
-
         Alert.alert(
             'Delete Item',
             `Are you sure you want to delete "${item.name}"?`,
@@ -85,7 +89,7 @@ export default function FoodDetailScreen() {
                         try {
                             await deleteItem(item.id);
                             router.back();
-                        } catch (err) {
+                        } catch {
                             Alert.alert('Error', 'Failed to delete item. Please try again.');
                         }
                     },
@@ -94,83 +98,62 @@ export default function FoodDetailScreen() {
         );
     }, [item, deleteItem, router]);
 
-    // Handle label scan
     const handleLabelCapture = useCallback(async (imageUri: string) => {
         setIsProcessingLabel(true);
-
         try {
-            // Convert image URI to base64 for API
             const response = await fetch(imageUri);
             const blob = await response.blob();
             const base64 = await new Promise<string>((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onloadend = () => {
                     const result = reader.result as string;
-                    const base64Data = result.split(',')[1] || result;
-                    resolve(base64Data);
+                    resolve(result.split(',')[1] || result);
                 };
                 reader.onerror = reject;
                 reader.readAsDataURL(blob);
             });
 
-            // Call the scan label API
             const scanResult = await api.scanLabel(base64);
-
             if (!scanResult.expirationDate) {
-                Alert.alert(
-                    'Date Not Found',
-                    'Could not find an expiration date on the label. Please enter it manually.'
-                );
+                Alert.alert('Date Not Found', 'Could not find an expiration date on the label. Please enter it manually.');
                 setShowLabelScanner(false);
                 return;
             }
-
             const extractedDate = new Date(scanResult.expirationDate);
             setExpirationDate(extractedDate);
             setHasChanges(true);
             setShowLabelScanner(false);
-
-            Alert.alert(
-                'Date Extracted',
-                `Expiration date set to ${formatDate(extractedDate)} (${Math.round(scanResult.confidence * 100)}% confidence). Don't forget to save your changes.`
-            );
+            Alert.alert('Date Extracted', `Expiration date set to ${formatDate(extractedDate)} (${Math.round(scanResult.confidence * 100)}% confidence). Don't forget to save.`);
         } catch (err) {
-            const message = err instanceof api.ApiClientError
-                ? err.message
-                : 'Failed to extract date from label. Please try again or enter manually.';
+            const message = err instanceof api.ApiClientError ? err.message : 'Failed to extract date from label.';
             Alert.alert('Error', message);
         } finally {
             setIsProcessingLabel(false);
         }
     }, []);
 
-    // Handle camera error
     const handleCameraError = useCallback((error: CameraError) => {
         setShowLabelScanner(false);
         Alert.alert('Camera Error', error.message);
     }, []);
 
-    // Loading state
     if (isLoading) {
         return (
-            <SafeAreaView style={[styles.container, { backgroundColor: colors.primarySurface }]} edges={['bottom']}>
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.canvas }]} edges={['bottom']}>
                 <LoadingSpinner message="Loading item details..." />
             </SafeAreaView>
         );
     }
 
-    // Item not found
     if (!item) {
         return (
-            <SafeAreaView style={[styles.container, { backgroundColor: colors.primarySurface }]} edges={['bottom']}>
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.canvas }]} edges={['bottom']}>
                 <View style={styles.notFoundContainer}>
                     <Ionicons name="alert-circle-outline" size={64} color={colors.textMuted} />
-                    <Text style={[styles.notFoundTitle, { color: colors.primaryInk }]}>Item Not Found</Text>
-                    <Text style={[styles.notFoundText, { color: colors.textMuted }]}>
-                        This food item may have been deleted.
-                    </Text>
-                    <TouchableOpacity style={[styles.backButton, { backgroundColor: colors.primaryInk }]} onPress={() => router.back()}>
-                        <Text style={[styles.backButtonText, { color: colors.canvas }]}>Go Back</Text>
+                    <Text style={[styles.notFoundTitle, { color: colors.text }]}>Item Not Found</Text>
+                    <Text style={[styles.notFoundText, { color: colors.textMuted }]}>This food item may have been deleted.</Text>
+                    <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: colors.primaryInk }]} onPress={() => router.back()}>
+                        <Text style={styles.primaryBtnText}>Go Back</Text>
                     </TouchableOpacity>
                 </View>
             </SafeAreaView>
@@ -179,95 +162,148 @@ export default function FoodDetailScreen() {
 
     const daysUntilExpiration = calculateDaysUntilExpiration(expirationDate);
     const status = getTrafficLightStatus(daysUntilExpiration);
+    const isExpired = daysUntilExpiration < 0;
+    const heroKey = isExpired ? 'expired' : status;
+    const heroColor = STATUS_HERO_COLOR[heroKey] ?? '#4a8840';
+    const emoji = item.category ? (CATEGORY_EMOJI[item.category] ?? '🍽️') : '🍽️';
+
+    // Confirmation success screens
+    if (confirmed === 'used') {
+        return (
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.canvas }]} edges={['bottom']}>
+                <View style={styles.confirmCenter}>
+                    <View style={[styles.confirmIcon, { backgroundColor: colors.statusGreenBg, borderColor: colors.statusGreenBorder }]}>
+                        <Ionicons name="checkmark" size={36} color={colors.primaryInk} />
+                    </View>
+                    <Text style={[styles.confirmTitle, { color: colors.text }]}>Nice work!</Text>
+                    <Text style={[styles.confirmMsg, { color: colors.textMuted }]}>
+                        You used {item.name} before it expired. That's one less item wasted.
+                    </Text>
+                    <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: colors.primaryInk, marginTop: 8 }]} onPress={() => router.back()}>
+                        <Text style={styles.primaryBtnText}>Back to fridge</Text>
+                    </TouchableOpacity>
+                </View>
+            </SafeAreaView>
+        );
+    }
+
+    if (confirmed === 'discarded') {
+        return (
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.canvas }]} edges={['bottom']}>
+                <View style={styles.confirmCenter}>
+                    <View style={[styles.confirmIcon, { backgroundColor: colors.statusExpiredBg, borderColor: colors.statusExpiredBorder }]}>
+                        <Ionicons name="trash" size={30} color={colors.statusExpiredText} />
+                    </View>
+                    <Text style={[styles.confirmTitle, { color: colors.text }]}>Item removed</Text>
+                    <Text style={[styles.confirmMsg, { color: colors.textMuted }]}>
+                        {item.name} has been removed from your fridge. Try to use it sooner next time.
+                    </Text>
+                    <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: colors.primaryInk, marginTop: 8 }]} onPress={() => router.back()}>
+                        <Text style={styles.primaryBtnText}>Back to fridge</Text>
+                    </TouchableOpacity>
+                </View>
+            </SafeAreaView>
+        );
+    }
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.primarySurface }]} edges={['bottom']}>
-            <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
-                {/* Item Name */}
-                <View style={styles.header}>
-                    <Text style={[styles.itemName, { color: colors.primaryInk }]}>{item.name}</Text>
-                    <ExpirationBadge status={status} daysUntilExpiration={daysUntilExpiration} />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.canvas }]} edges={['bottom']}>
+            <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+
+                {/* Hero section */}
+                <View style={[styles.hero, { backgroundColor: `${heroColor}14`, borderBottomColor: `${heroColor}22` }]}>
+                    <Text style={styles.heroEmoji}>{emoji}</Text>
+                    <Text style={[styles.heroName, { color: colors.text }]}>{item.name}</Text>
+                    <Text style={[styles.heroMeta, { color: colors.textMuted }]}>
+                        {[item.category, item.location, item.quantity].filter(Boolean).join(' · ')}
+                    </Text>
+                    {/* Countdown chip */}
+                    <View style={[styles.countdownChip, { backgroundColor: `${heroColor}18` }]}>
+                        <Text style={[styles.countdownText, { color: heroColor }]}>
+                            {isExpired
+                                ? `Expired · –${Math.abs(daysUntilExpiration)}d`
+                                : daysUntilExpiration === 0
+                                ? 'Expires today'
+                                : `${daysUntilExpiration} days left`}
+                        </Text>
+                    </View>
                 </View>
 
-                {/* Info Cards */}
-                <View style={styles.infoSection}>
-                    <View style={[styles.infoCard, { backgroundColor: colors.secondarySurface }]}>
-                        <Ionicons name="cart-outline" size={24} color={colors.primaryInk} />
-                        <View style={styles.infoContent}>
-                            <Text style={[styles.infoLabel, { color: colors.textMuted }]}>Purchase Date</Text>
-                            <Text style={[styles.infoValue, { color: colors.primaryInk }]}>{formatDate(item.purchaseDate)}</Text>
+                {/* Detail rows */}
+                <View style={[styles.detailSection, { borderTopColor: colors.border }]}>
+                    {[
+                        { label: 'Expiry date', value: formatDate(expirationDate), mono: true },
+                        { label: 'Purchased', value: formatDate(item.purchaseDate) },
+                        { label: 'Storage', value: item.location || '—' },
+                        { label: 'Quantity', value: item.quantity || '—' },
+                        { label: 'Category', value: item.category || '—' },
+                    ].map(row => (
+                        <View key={row.label} style={[styles.detailRow, { borderBottomColor: colors.border }]}>
+                            <Text style={[styles.detailLabel, { color: colors.textMuted }]}>{row.label}</Text>
+                            <Text style={[
+                                styles.detailValue,
+                                { color: colors.text },
+                                row.mono && { fontVariant: ['tabular-nums'] },
+                            ]}>{row.value}</Text>
                         </View>
-                    </View>
+                    ))}
+                </View>
 
-                    <View style={[styles.infoCard, { backgroundColor: colors.secondarySurface }]}>
-                        <Ionicons name="calendar-outline" size={24} color={colors.primaryInk} />
-                        <View style={styles.infoContent}>
-                            <Text style={[styles.infoLabel, { color: colors.textMuted }]}>Added On</Text>
-                            <Text style={[styles.infoValue, { color: colors.primaryInk }]}>{formatDate(item.createdAt)}</Text>
-                        </View>
-                    </View>
-
-                    {item.isEstimated && (
-                        <View style={[styles.estimatedBanner, { backgroundColor: colors.statusYellowBg }]}>
-                            <Ionicons name="information-circle-outline" size={20} color={colors.statusYellowText} />
-                            <Text style={[styles.estimatedText, { color: colors.statusYellowText }]}>
-                                Expiration date is an AI estimate. Scan the label or edit manually for accuracy.
-                            </Text>
-                        </View>
+                {/* Edit expiry date */}
+                <View style={[styles.section, { borderTopColor: colors.border }]}>
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Update Expiry Date</Text>
+                    <DatePicker value={expirationDate} onChange={handleDateChange} label="Select expiration date" />
+                    <TouchableOpacity
+                        style={[styles.outlineBtn, { borderColor: colors.primaryInk }]}
+                        onPress={() => setShowLabelScanner(true)}
+                    >
+                        <Ionicons name="camera-outline" size={18} color={colors.primaryInk} />
+                        <Text style={[styles.outlineBtnText, { color: colors.primaryInk }]}>Scan Product Label</Text>
+                    </TouchableOpacity>
+                    {hasChanges && (
+                        <TouchableOpacity
+                            style={[styles.primaryBtn, { backgroundColor: isSaving ? colors.textMuted : colors.primaryInk, marginTop: 10 }]}
+                            onPress={handleSave}
+                            disabled={isSaving}
+                        >
+                            <Ionicons name="checkmark" size={18} color="#fff" />
+                            <Text style={styles.primaryBtnText}>{isSaving ? 'Saving…' : 'Save Changes'}</Text>
+                        </TouchableOpacity>
                     )}
                 </View>
 
-                {/* Expiration Date Editor */}
-                <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: colors.primaryInk }]}>Expiration Date</Text>
-                    <DatePicker
-                        value={expirationDate}
-                        onChange={handleDateChange}
-                        label="Select expiration date"
-                    />
-
+                {/* Quick-action buttons */}
+                <View style={styles.actions}>
                     <TouchableOpacity
-                        style={[styles.scanLabelButton, { backgroundColor: colors.canvas, borderColor: colors.primaryInk }]}
-                        onPress={() => setShowLabelScanner(true)}
+                        style={[styles.primaryBtn, { backgroundColor: colors.primaryInk }]}
+                        onPress={() => setConfirmed('used')}
                     >
-                        <Ionicons name="camera-outline" size={20} color={colors.primaryInk} />
-                        <Text style={[styles.scanLabelText, { color: colors.primaryInk }]}>Scan Product Label</Text>
+                        <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
+                        <Text style={styles.primaryBtnText}>Mark as used</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.dangerBtn, { backgroundColor: colors.statusExpiredBg, borderColor: colors.statusExpiredBorder }]}
+                        onPress={() => setConfirmed('discarded')}
+                    >
+                        <Ionicons name="trash-outline" size={18} color={colors.statusExpiredText} />
+                        <Text style={[styles.dangerBtnText, { color: colors.statusExpiredText }]}>Discard item</Text>
                     </TouchableOpacity>
                 </View>
-
-                {/* Save Button */}
-                {hasChanges && (
-                    <TouchableOpacity
-                        style={[styles.saveButton, { backgroundColor: colors.primaryInk }, isSaving && { backgroundColor: colors.textMuted }]}
-                        onPress={handleSave}
-                        disabled={isSaving}
-                    >
-                        {isSaving ? (
-                            <Text style={[styles.saveButtonText, { color: colors.canvas }]}>Saving...</Text>
-                        ) : (
-                            <>
-                                <Ionicons name="checkmark" size={20} color={colors.canvas} />
-                                <Text style={[styles.saveButtonText, { color: colors.canvas }]}>Save Changes</Text>
-                            </>
-                        )}
-                    </TouchableOpacity>
-                )}
             </ScrollView>
 
-            {/* Delete Button */}
-            <View style={[styles.bottomActions, { borderTopColor: colors.border, backgroundColor: colors.secondarySurface }]}>
-                <TouchableOpacity style={[styles.deleteButton, { backgroundColor: colors.statusRedBg, borderColor: colors.statusRedBg }]} onPress={handleDelete}>
-                    <Ionicons name="trash-outline" size={20} color={colors.statusRedText} />
-                    <Text style={[styles.deleteButtonText, { color: colors.statusRedText }]}>Delete Item</Text>
+            {/* Bottom delete bar */}
+            <View style={[styles.bottomBar, { borderTopColor: colors.border, backgroundColor: colors.primarySurface }]}>
+                <TouchableOpacity
+                    style={[styles.deleteBtn, { backgroundColor: colors.statusExpiredBg, borderColor: colors.statusExpiredBorder }]}
+                    onPress={handleDelete}
+                >
+                    <Ionicons name="trash-outline" size={18} color={colors.statusExpiredText} />
+                    <Text style={[styles.deleteBtnText, { color: colors.statusExpiredText }]}>Delete Item</Text>
                 </TouchableOpacity>
             </View>
 
-            {/* Label Scanner Modal */}
-            <Modal
-                visible={showLabelScanner}
-                animationType="slide"
-                presentationStyle="fullScreen"
-            >
+            {/* Label scanner modal */}
+            <Modal visible={showLabelScanner} animationType="slide" presentationStyle="fullScreen">
                 {isProcessingLabel ? (
                     <SafeAreaView style={styles.processingContainer}>
                         <LoadingSpinner message="Extracting expiration date..." />
@@ -286,139 +322,117 @@ export default function FoodDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
+    container: { flex: 1 },
+    scroll: { flex: 1 },
+    scrollContent: { paddingBottom: 24 },
+
+    // Hero
+    hero: {
+        alignItems: 'center',
+        paddingVertical: 28,
+        paddingHorizontal: 20,
+        borderBottomWidth: 1,
+        gap: 8,
     },
-    scrollView: {
-        flex: 1,
+    heroEmoji: { fontSize: 52 },
+    heroName: {
+        fontSize: 26,
+        fontWeight: '600',
+        textAlign: 'center',
     },
-    content: {
-        padding: expiria.spacing.md,
+    heroMeta: { fontSize: 12, textAlign: 'center' },
+    countdownChip: {
+        borderRadius: expiria.borderRadius.sm,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        marginTop: 4,
     },
-    header: {
+    countdownText: { fontSize: 14, fontWeight: '500' },
+
+    // Detail rows
+    detailSection: { borderTopWidth: 1, marginTop: 8, paddingHorizontal: 20 },
+    detailRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: expiria.spacing.lg,
-    },
-    itemName: {
-        fontSize: expiria.typography.sizes.heading,
-        fontWeight: expiria.typography.weights.bold,
-        flex: 1,
-        marginRight: expiria.spacing.sm + 4,
-    },
-    infoSection: {
-        marginBottom: expiria.spacing.lg,
-    },
-    infoCard: {
-        flexDirection: 'row',
         alignItems: 'center',
-        borderRadius: expiria.borderRadius.sm + 4,
-        padding: expiria.spacing.md,
-        marginBottom: expiria.spacing.sm + 4,
-        ...expiria.shadows.soft,
+        paddingVertical: 13,
+        borderBottomWidth: 1,
     },
-    infoContent: {
-        marginLeft: expiria.spacing.sm + 4,
-    },
-    infoLabel: {
-        fontSize: expiria.typography.sizes.small + 1,
-        marginBottom: 2,
-    },
-    infoValue: {
-        fontSize: expiria.typography.sizes.body,
-        fontWeight: expiria.typography.weights.semibold,
-    },
-    estimatedBanner: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        borderRadius: expiria.borderRadius.sm,
-        padding: expiria.spacing.sm + 4,
-        gap: expiria.spacing.sm,
-    },
-    estimatedText: {
-        flex: 1,
-        fontSize: expiria.typography.sizes.caption,
-        lineHeight: 18,
-    },
+    detailLabel: { fontSize: 13 },
+    detailValue: { fontSize: 14, fontWeight: '500' },
+
+    // Sections
     section: {
-        marginBottom: expiria.spacing.lg,
+        marginTop: 8,
+        borderTopWidth: 1,
+        padding: 20,
+        gap: 12,
     },
-    sectionTitle: {
-        fontSize: expiria.typography.sizes.subheading - 2,
-        fontWeight: expiria.typography.weights.semibold,
-        marginBottom: expiria.spacing.sm + 4,
-    },
-    scanLabelButton: {
+    sectionTitle: { fontSize: 16, fontWeight: '600', marginBottom: 4 },
+
+    // Actions
+    actions: { paddingHorizontal: 20, paddingTop: 12, gap: 10 },
+
+    // Buttons
+    primaryBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        borderWidth: expiria.strokes.thin,
-        borderRadius: expiria.borderRadius.sm,
-        paddingVertical: expiria.spacing.sm + 4,
-        gap: expiria.spacing.sm,
+        gap: 8,
+        paddingVertical: 14,
+        borderRadius: expiria.borderRadius.md,
     },
-    scanLabelText: {
-        fontSize: expiria.typography.sizes.body,
-        fontWeight: expiria.typography.weights.medium,
-    },
-    saveButton: {
+    primaryBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+    outlineBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
+        gap: 8,
+        paddingVertical: 12,
         borderRadius: expiria.borderRadius.sm,
-        paddingVertical: expiria.spacing.sm + 6,
-        gap: expiria.spacing.sm,
+        borderWidth: 1,
     },
-    saveButtonText: {
-        fontSize: expiria.typography.sizes.body,
-        fontWeight: expiria.typography.weights.semibold,
-    },
-    bottomActions: {
-        padding: expiria.spacing.md,
-        borderTopWidth: expiria.strokes.thin,
-    },
-    deleteButton: {
+    outlineBtnText: { fontSize: 14, fontWeight: '500' },
+    dangerBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        borderWidth: expiria.strokes.thin,
-        borderRadius: expiria.borderRadius.sm,
-        paddingVertical: expiria.spacing.sm + 4,
-        gap: expiria.spacing.sm,
+        gap: 8,
+        paddingVertical: 14,
+        borderRadius: expiria.borderRadius.md,
+        borderWidth: 1,
     },
-    deleteButtonText: {
-        fontSize: expiria.typography.sizes.body,
-        fontWeight: expiria.typography.weights.medium,
-    },
-    notFoundContainer: {
-        flex: 1,
-        justifyContent: 'center',
+    dangerBtnText: { fontSize: 15, fontWeight: '600' },
+
+    // Bottom bar
+    bottomBar: { padding: expiria.spacing.md, borderTopWidth: 1 },
+    deleteBtn: {
+        flexDirection: 'row',
         alignItems: 'center',
-        padding: expiria.spacing.xl,
-    },
-    notFoundTitle: {
-        fontSize: expiria.typography.sizes.subheading,
-        fontWeight: expiria.typography.weights.semibold,
-        marginTop: expiria.spacing.md,
-    },
-    notFoundText: {
-        fontSize: 14,
-        textAlign: 'center',
-        marginTop: expiria.spacing.sm,
-    },
-    backButton: {
-        marginTop: expiria.spacing.lg,
-        paddingHorizontal: expiria.spacing.lg,
-        paddingVertical: expiria.spacing.sm + 4,
+        justifyContent: 'center',
+        gap: 8,
+        paddingVertical: 12,
         borderRadius: expiria.borderRadius.sm,
+        borderWidth: 1,
     },
-    backButtonText: {
-        fontSize: expiria.typography.sizes.body,
-        fontWeight: expiria.typography.weights.semibold,
+    deleteBtnText: { fontSize: 14, fontWeight: '500' },
+
+    // Not found / confirmation
+    notFoundContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
+    notFoundTitle: { fontSize: 20, fontWeight: '600', marginTop: 16 },
+    notFoundText: { fontSize: 14, textAlign: 'center', marginTop: 8 },
+    confirmCenter: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 16 },
+    confirmIcon: {
+        width: 72,
+        height: 72,
+        borderRadius: 36,
+        borderWidth: 2,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    processingContainer: {
-        flex: 1,
-        backgroundColor: '#000000',
-    },
+    confirmTitle: { fontSize: 22, fontWeight: '600' },
+    confirmMsg: { fontSize: 14, textAlign: 'center', lineHeight: 22 },
+
+    // Label scanner
+    processingContainer: { flex: 1, backgroundColor: '#000' },
 });

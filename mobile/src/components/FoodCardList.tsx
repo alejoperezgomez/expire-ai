@@ -13,6 +13,7 @@ interface FoodCardListProps {
     onRefresh?: () => void;
     refreshing?: boolean;
     onAddItem?: () => void;
+    viewMode?: 'list' | 'grid';
 }
 
 export function FoodCardList({
@@ -22,10 +23,10 @@ export function FoodCardList({
     onRefresh,
     refreshing = false,
     onAddItem,
+    viewMode = 'list',
 }: FoodCardListProps) {
     const colors = useThemeColors();
 
-    // Sort items by expiration date (soonest first)
     const sortedItems = useMemo(() => {
         return [...items].sort((a, b) => {
             const dateA = new Date(a.expirationDate).getTime();
@@ -44,11 +45,15 @@ export function FoodCardList({
                 status={item.status}
                 daysUntilExpiration={item.daysUntilExpiration}
                 isEstimated={item.isEstimated}
+                category={item.category}
+                location={item.location}
+                quantity={item.quantity}
+                variant={viewMode}
                 onPress={() => onItemPress(item.id)}
                 onDelete={() => onItemDelete(item.id)}
             />
         ),
-        [onItemPress, onItemDelete]
+        [onItemPress, onItemDelete, viewMode]
     );
 
     const keyExtractor = useCallback((item: FoodItemWithStatus) => item.id, []);
@@ -60,48 +65,58 @@ export function FoodCardList({
                 illustration={require('../../assets/empty-fridge.png')}
                 title="No Food Items"
                 message="Start tracking your food by scanning a receipt or adding items manually."
-                actionLabel={onAddItem ? "Scan Receipt" : undefined}
+                actionLabel={onAddItem ? 'Add Item' : undefined}
                 onAction={onAddItem}
             />
         ),
         [onAddItem]
     );
 
+    const isGrid = viewMode === 'grid';
+
     return (
-        <View style={[styles.container, { backgroundColor: colors.primarySurface }]}>
-            <FlatList
-                data={sortedItems}
-                renderItem={renderItem}
-                keyExtractor={keyExtractor}
-                contentContainerStyle={[
-                    styles.listContent,
-                    sortedItems.length === 0 && styles.emptyListContent,
-                ]}
-                ListEmptyComponent={renderEmptyState}
-                refreshControl={
-                    onRefresh ? (
-                        <RefreshControl
-                            refreshing={refreshing}
-                            onRefresh={onRefresh}
-                            tintColor={colors.primaryInk}
-                            colors={[colors.primaryInk]}
-                        />
-                    ) : undefined
-                }
-                showsVerticalScrollIndicator={false}
-            />
-        </View>
+        <FlatList
+            key={viewMode} // remount when switching layout to reset column count
+            data={sortedItems}
+            renderItem={renderItem}
+            keyExtractor={keyExtractor}
+            numColumns={isGrid ? 2 : 1}
+            columnWrapperStyle={isGrid ? styles.gridRow : undefined}
+            contentContainerStyle={[
+                isGrid ? styles.gridContent : styles.listContent,
+                sortedItems.length === 0 && styles.emptyContent,
+            ]}
+            ListEmptyComponent={renderEmptyState}
+            refreshControl={
+                onRefresh ? (
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        tintColor={colors.primaryInk}
+                        colors={[colors.primaryInk]}
+                    />
+                ) : undefined
+            }
+            showsVerticalScrollIndicator={false}
+        />
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
     listContent: {
-        paddingVertical: expiria.spacing.sm,
+        paddingHorizontal: expiria.spacing.md,
+        paddingBottom: expiria.spacing.lg,
+        gap: expiria.spacing.sm,
     },
-    emptyListContent: {
+    gridContent: {
+        paddingHorizontal: expiria.spacing.md,
+        paddingBottom: expiria.spacing.lg,
+    },
+    gridRow: {
+        gap: 10,
+        marginBottom: 10,
+    },
+    emptyContent: {
         flexGrow: 1,
     },
 });

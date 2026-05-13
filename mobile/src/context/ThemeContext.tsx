@@ -60,7 +60,9 @@ export function useThemeMode(): ThemeContextValue {
   return ctx;
 }
 
-export function useThemeColors(): typeof expiria.colors {
+export type ExpiryColorPalette = { [K in keyof typeof expiria.colors]: string };
+
+export function useThemeColors(): ExpiryColorPalette {
   const { mode } = useThemeMode();
-  return mode === 'dark' ? expiria.darkColors : expiria.colors;
+  return (mode === 'dark' ? expiria.darkColors : expiria.colors) as ExpiryColorPalette;
 }

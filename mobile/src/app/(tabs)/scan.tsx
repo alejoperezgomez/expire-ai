@@ -22,6 +22,7 @@ import * as api from '../../services/api';
 import { expiria } from '../../theme';
 import { useThemeColors } from '../../context/ThemeContext';
 
+type ScanMode = 'manual' | 'scan';
 type ScanState = 'camera' | 'processing' | 'confirm' | 'error';
 
 interface EditableItem extends ExtractedFoodItem {
@@ -29,384 +30,525 @@ interface EditableItem extends ExtractedFoodItem {
     selected: boolean;
 }
 
+const CATEGORIES = ['Dairy', 'Produce', 'Meat', 'Seafood', 'Bakery', 'Pantry', 'Beverage', 'Leftovers', 'Frozen', 'Condiments'];
+const LOCATIONS = ['Fridge', 'Freezer', 'Pantry', 'Counter'];
+
 export default function ScanScreen() {
     const router = useRouter();
     const { addItems } = useFoodItems();
     const colors = useThemeColors();
 
+    const [mode, setMode] = useState<ScanMode>('manual');
     const [scanState, setScanState] = useState<ScanState>('camera');
     const [extractedItems, setExtractedItems] = useState<EditableItem[]>([]);
-    const [errorMessage, setErrorMessage] = useState<string>('');
+    const [errorMessage, setErrorMessage] = useState('');
 
-    // Handle image capture
-    const handleCapture = useCallback(async (imageUri: string) => {
-        console.log('[SCAN] Image captured:', imageUri);
-        setScanState('processing');
+    // Manual entry form state
+    const [form, setForm] = useState({
+        name: '', category: 'Dairy', location: 'Fridge', quantity: '', expiryDate: '',
+    });
+    const [submitted, setSubmitted] = useState(false);
 
+    const updateForm = (key: keyof typeof form, val: string) =>
+        setForm(f => ({ ...f, [key]: val }));
+
+    // ── Manual entry submit ──────────────────────────────────────────
+    const handleManualSubmit = useCallback(async () => {
+        if (!form.name.trim()) return;
         try {
-            // Convert image URI to base64 for API using expo-file-system
-            console.log('[SCAN] Converting image to base64...');
-            const base64 = await FileSystem.readAsStringAsync(imageUri, {
-                encoding: 'base64',
-            });
-            console.log('[SCAN] Base64 length:', base64.length);
+            const today = new Date();
+            // Parse expiryDate if provided, otherwise default 7 days
+            let expirationDate = toISODateString(addDays(today, 7));
+            if (form.expiryDate.trim()) {
+                const parsed = new Date(form.expiryDate.trim());
+                if (!isNaN(parsed.getTime())) {
+                    expirationDate = toISODateString(parsed);
+                }
+            }
+            await addItems([{
+                name: form.name.trim(),
+                purchaseDate: toISODateString(today),
+                expirationDate,
+                isEstimated: !form.expiryDate.trim(),
+                category: form.category,
+                location: form.location,
+                quantity: form.quantity.trim() || undefined,
+            }]);
+            setSubmitted(true);
+        } catch {
+            Alert.alert('Error', 'Failed to add item. Please try again.');
+        }
+    }, [form, addItems]);
 
-            // Call the scan API
-            console.log('[SCAN] Calling scan API...');
+    const resetManual = () => {
+        setForm({ name: '', category: 'Dairy', location: 'Fridge', quantity: '', expiryDate: '' });
+        setSubmitted(false);
+    };
+
+    // ── Receipt scan handlers ────────────────────────────────────────
+    const handleCapture = useCallback(async (imageUri: string) => {
+        setScanState('processing');
+        try {
+            const base64 = await FileSystem.readAsStringAsync(imageUri, { encoding: 'base64' });
             const scanResult = await api.scanReceipt(base64);
-            console.log('[SCAN] Scan result:', scanResult);
-
             if (scanResult.items.length === 0) {
                 setErrorMessage('No food items found in the receipt. Please try again with a clearer image.');
                 setScanState('error');
                 return;
             }
-
-            // Convert to editable items
-            const editableItems: EditableItem[] = scanResult.items.map((item, index) => ({
+            setExtractedItems(scanResult.items.map((item, index) => ({
                 ...item,
                 id: `item-${Date.now()}-${index}`,
                 selected: true,
-            }));
-
-            setExtractedItems(editableItems);
+            })));
             setScanState('confirm');
         } catch (err) {
-            console.error('Scan error:', err);
-            const message = err instanceof api.ApiClientError
-                ? err.message
-                : err instanceof Error
-                    ? err.message
-                    : 'Failed to process the receipt. Please try again.';
+            const message = err instanceof api.ApiClientError ? err.message
+                : err instanceof Error ? err.message
+                : 'Failed to process the receipt. Please try again.';
             setErrorMessage(message);
             setScanState('error');
         }
     }, []);
 
-    // Handle camera error
     const handleCameraError = useCallback((error: CameraError) => {
         setErrorMessage(error.message);
         setScanState('error');
     }, []);
 
-    // Toggle item selection
-    const toggleItemSelection = useCallback((id: string) => {
-        setExtractedItems(prev =>
-            prev.map(item =>
-                item.id === id ? { ...item, selected: !item.selected } : item
-            )
-        );
-    }, []);
+    const toggleItem = (id: string) =>
+        setExtractedItems(prev => prev.map(i => i.id === id ? { ...i, selected: !i.selected } : i));
+    const updateItemName = (id: string, name: string) =>
+        setExtractedItems(prev => prev.map(i => i.id === id ? { ...i, name } : i));
+    const removeItem = (id: string) =>
+        setExtractedItems(prev => prev.filter(i => i.id !== id));
 
-    // Update item name
-    const updateItemName = useCallback((id: string, name: string) => {
-        setExtractedItems(prev =>
-            prev.map(item =>
-                item.id === id ? { ...item, name } : item
-            )
-        );
-    }, []);
-
-    // Remove item
-    const removeItem = useCallback((id: string) => {
-        setExtractedItems(prev => prev.filter(item => item.id !== id));
-    }, []);
-
-    // Save confirmed items
     const handleSaveItems = useCallback(async () => {
-        const selectedItems = extractedItems.filter(item => item.selected);
-
-        if (selectedItems.length === 0) {
+        const selected = extractedItems.filter(i => i.selected);
+        if (!selected.length) {
             Alert.alert('No Items Selected', 'Please select at least one item to save.');
             return;
         }
-
         try {
             const today = new Date();
-            const itemsToSave = selectedItems.map(item => ({
+            await addItems(selected.map(item => ({
                 name: item.name,
                 purchaseDate: toISODateString(today),
                 expirationDate: toISODateString(addDays(today, item.estimatedExpirationDays)),
                 isEstimated: true,
-            }));
-
-            await addItems(itemsToSave);
-
-            Alert.alert(
-                'Items Saved',
-                `${selectedItems.length} item(s) added to your food tracker.`,
-                [{ text: 'OK', onPress: () => router.push('/(tabs)/') }]
-            );
-
-            // Reset state
+            })));
+            Alert.alert('Items Saved', `${selected.length} item(s) added to your food tracker.`, [
+                { text: 'OK', onPress: () => router.push('/(tabs)/') },
+            ]);
             setExtractedItems([]);
             setScanState('camera');
-        } catch (err) {
+        } catch {
             Alert.alert('Error', 'Failed to save items. Please try again.');
         }
     }, [extractedItems, addItems, router]);
 
-    // Retry scanning
     const handleRetry = useCallback(() => {
         setErrorMessage('');
         setExtractedItems([]);
         setScanState('camera');
     }, []);
 
-    // Render camera view
-    if (scanState === 'camera') {
-        return (
-            <CameraViewComponent
-                mode="receipt"
-                onCapture={handleCapture}
-                onError={handleCameraError}
-            />
-        );
-    }
+    // ── Shared styles ────────────────────────────────────────────────
+    const inputStyle = {
+        fontSize: 14,
+        color: colors.text,
+        backgroundColor: colors.primarySurface,
+        borderColor: colors.border,
+        borderWidth: 1.5,
+        borderRadius: expiria.borderRadius.sm,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+    } as const;
 
-    // Render processing state
-    if (scanState === 'processing') {
+    // ── Manual entry success screen ──────────────────────────────────
+    if (mode === 'manual' && submitted) {
         return (
             <SafeAreaView style={[styles.container, { backgroundColor: colors.canvas }]} edges={['bottom']}>
-                <LoadingSpinner message="Processing receipt..." />
-                <Text style={[styles.processingSubtext, { color: colors.textMuted }]}>
-                    Our AI is extracting food items from your receipt
-                </Text>
-            </SafeAreaView>
-        );
-    }
-
-    // Render error state
-    if (scanState === 'error') {
-        return (
-            <SafeAreaView style={[styles.container, { backgroundColor: colors.canvas }]} edges={['bottom']}>
-                <View style={styles.errorContainer}>
-                    <Ionicons name="alert-circle-outline" size={64} color={colors.statusRedText} />
-                    <Text style={[styles.errorTitle, { color: colors.primaryInk }]}>Scan Failed</Text>
-                    <Text style={[styles.errorText, { color: colors.textMuted }]}>{errorMessage}</Text>
-                    <TouchableOpacity style={[styles.retryButton, { backgroundColor: colors.primaryInk }]} onPress={handleRetry}>
-                        <Ionicons name="refresh" size={20} color={colors.canvas} />
-                        <Text style={[styles.retryButtonText, { color: colors.canvas }]}>Try Again</Text>
+                <View style={styles.center}>
+                    <View style={[styles.successIcon, { backgroundColor: colors.statusGreenBg, borderColor: colors.statusGreenBorder }]}>
+                        <Ionicons name="leaf-outline" size={36} color={colors.primaryInk} />
+                    </View>
+                    <Text style={[styles.successTitle, { color: colors.text }]}>Item added!</Text>
+                    <Text style={[styles.successMsg, { color: colors.textMuted }]}>
+                        {form.name || 'Your item'} has been added to your {form.location.toLowerCase()}.
+                    </Text>
+                    <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: colors.primaryInk, marginTop: 8 }]} onPress={resetManual}>
+                        <Text style={styles.primaryBtnText}>Add another item</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => router.push('/(tabs)/')}>
+                        <Text style={[styles.ghostBtnText, { color: colors.textMuted }]}>Back to fridge</Text>
                     </TouchableOpacity>
                 </View>
             </SafeAreaView>
         );
     }
 
-    // Render confirmation view
-    return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.canvas }]} edges={['bottom']}>
-            <ScrollView style={styles.confirmContainer}>
-                <Text style={[styles.confirmTitle, { color: colors.primaryInk }]}>Confirm Items</Text>
-                <Text style={[styles.confirmSubtitle, { color: colors.textMuted }]}>
-                    Review and edit the extracted items before saving
+    // ── Scan: camera view ────────────────────────────────────────────
+    if (mode === 'scan' && scanState === 'camera') {
+        return (
+            <View style={styles.container}>
+                {/* Mode toggle overlay */}
+                <View style={styles.modeToggleOverlay}>
+                    <ModeToggle mode={mode} onSwitch={setMode} colors={colors} />
+                </View>
+                <CameraViewComponent mode="receipt" onCapture={handleCapture} onError={handleCameraError} />
+            </View>
+        );
+    }
+
+    if (mode === 'scan' && scanState === 'processing') {
+        return (
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.canvas }]} edges={['bottom']}>
+                <LoadingSpinner message="Processing receipt…" />
+                <Text style={[styles.processingNote, { color: colors.textMuted }]}>
+                    AI is extracting food items from your receipt
                 </Text>
+            </SafeAreaView>
+        );
+    }
 
-                {extractedItems.map(item => (
-                    <View key={item.id} style={[styles.itemCard, { backgroundColor: colors.secondarySurface }]}>
-                        <TouchableOpacity
-                            style={styles.checkbox}
-                            onPress={() => toggleItemSelection(item.id)}
-                        >
-                            <Ionicons
-                                name={item.selected ? 'checkbox' : 'square-outline'}
-                                size={24}
-                                color={item.selected ? colors.primaryInk : colors.textMuted}
-                            />
-                        </TouchableOpacity>
+    if (mode === 'scan' && scanState === 'error') {
+        return (
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.canvas }]} edges={['bottom']}>
+                <View style={styles.center}>
+                    <Ionicons name="alert-circle-outline" size={64} color={colors.statusExpiredText} />
+                    <Text style={[styles.successTitle, { color: colors.text }]}>Scan Failed</Text>
+                    <Text style={[styles.successMsg, { color: colors.textMuted }]}>{errorMessage}</Text>
+                    <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: colors.primaryInk }]} onPress={handleRetry}>
+                        <Ionicons name="refresh" size={18} color="#fff" />
+                        <Text style={styles.primaryBtnText}>Try Again</Text>
+                    </TouchableOpacity>
+                </View>
+            </SafeAreaView>
+        );
+    }
 
-                        <View style={styles.itemContent}>
-                            <TextInput
-                                style={[styles.itemNameInput, { color: colors.primaryInk }]}
-                                value={item.name}
-                                onChangeText={(text) => updateItemName(item.id, text)}
-                                placeholder="Item name"
-                            />
-                            <Text style={[styles.itemExpiry, { color: colors.textMuted }]}>
-                                Expires in ~{item.estimatedExpirationDays} days
-                            </Text>
-                            <View style={[styles.confidenceBadge, { backgroundColor: colors.border }]}>
-                                <Text style={[styles.confidenceText, { color: colors.textMuted }]}>
-                                    {Math.round(item.confidence * 100)}% confidence
+    if (mode === 'scan' && scanState === 'confirm') {
+        return (
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.canvas }]} edges={['bottom']}>
+                <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+                    <Text style={[styles.confirmTitle, { color: colors.text }]}>Confirm Items</Text>
+                    <Text style={[styles.confirmSub, { color: colors.textMuted }]}>
+                        Review and edit the extracted items before saving
+                    </Text>
+                    {extractedItems.map(item => (
+                        <View key={item.id} style={[styles.itemCard, { backgroundColor: colors.secondarySurface, borderColor: colors.border }]}>
+                            <TouchableOpacity onPress={() => toggleItem(item.id)} style={styles.checkbox}>
+                                <Ionicons
+                                    name={item.selected ? 'checkbox' : 'square-outline'}
+                                    size={24}
+                                    color={item.selected ? colors.primaryInk : colors.textMuted}
+                                />
+                            </TouchableOpacity>
+                            <View style={styles.itemContent}>
+                                <TextInput
+                                    style={[styles.itemNameInput, { color: colors.text }]}
+                                    value={item.name}
+                                    onChangeText={text => updateItemName(item.id, text)}
+                                    placeholder="Item name"
+                                    placeholderTextColor={colors.textMuted}
+                                />
+                                <Text style={[styles.itemExpiry, { color: colors.textMuted }]}>
+                                    Expires in ~{item.estimatedExpirationDays} days
                                 </Text>
                             </View>
+                            <TouchableOpacity onPress={() => removeItem(item.id)} style={styles.removeBtn}>
+                                <Ionicons name="close-circle" size={22} color={colors.statusExpiredText} />
+                            </TouchableOpacity>
                         </View>
+                    ))}
+                </ScrollView>
+                <View style={[styles.bottomBar, { borderTopColor: colors.border, backgroundColor: colors.primarySurface }]}>
+                    <TouchableOpacity style={[styles.outlineBtn, { borderColor: colors.border }]} onPress={handleRetry}>
+                        <Text style={[styles.outlineBtnText, { color: colors.text }]}>Scan Again</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[
+                            styles.primaryBtn,
+                            { backgroundColor: extractedItems.filter(i => i.selected).length ? colors.primaryInk : colors.textMuted, flex: 1 },
+                        ]}
+                        onPress={handleSaveItems}
+                        disabled={!extractedItems.filter(i => i.selected).length}
+                    >
+                        <Ionicons name="checkmark" size={18} color="#fff" />
+                        <Text style={styles.primaryBtnText}>
+                            Save ({extractedItems.filter(i => i.selected).length})
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+            </SafeAreaView>
+        );
+    }
 
-                        <TouchableOpacity
-                            style={styles.removeButton}
-                            onPress={() => removeItem(item.id)}
-                        >
-                            <Ionicons name="close-circle" size={24} color={colors.statusRedText} />
-                        </TouchableOpacity>
-                    </View>
-                ))}
+    // ── Manual entry form ────────────────────────────────────────────
+    return (
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.canvas }]} edges={['bottom']}>
+            <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
 
-                {extractedItems.length === 0 && (
-                    <View style={styles.emptyItems}>
-                        <Text style={[styles.emptyItemsText, { color: colors.textMuted }]}>No items to confirm</Text>
-                        <TouchableOpacity style={[styles.scanAgainButton, { backgroundColor: colors.border }]} onPress={handleRetry}>
-                            <Text style={[styles.scanAgainText, { color: colors.primaryInk }]}>Scan Again</Text>
-                        </TouchableOpacity>
+                {/* Mode toggle */}
+                <ModeToggle mode={mode} onSwitch={setMode} colors={colors} />
+
+                {/* Form */}
+                <View style={styles.formSection}>
+                    {/* Name */}
+                    <View style={styles.field}>
+                        <Text style={[styles.fieldLabel, { color: colors.text }]}>Item name</Text>
+                        <TextInput
+                            style={[inputStyle, styles.textInput]}
+                            placeholder="e.g. Whole milk"
+                            placeholderTextColor={colors.textMuted}
+                            value={form.name}
+                            onChangeText={v => updateForm('name', v)}
+                        />
                     </View>
-                )}
+
+                    {/* Category */}
+                    <View style={styles.field}>
+                        <Text style={[styles.fieldLabel, { color: colors.text }]}>Category</Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipScrollContent}>
+                            {CATEGORIES.map(c => (
+                                <TouchableOpacity
+                                    key={c}
+                                    onPress={() => updateForm('category', c)}
+                                    style={[
+                                        styles.chip,
+                                        form.category === c
+                                            ? { backgroundColor: colors.primaryInk, borderColor: colors.primaryInk }
+                                            : { backgroundColor: colors.primarySurface, borderColor: colors.border },
+                                    ]}
+                                >
+                                    <Text style={[styles.chipText, { color: form.category === c ? '#fff' : colors.textMuted }]}>{c}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+
+                    {/* Location */}
+                    <View style={styles.field}>
+                        <Text style={[styles.fieldLabel, { color: colors.text }]}>Storage location</Text>
+                        <View style={styles.chipRow}>
+                            {LOCATIONS.map(l => (
+                                <TouchableOpacity
+                                    key={l}
+                                    onPress={() => updateForm('location', l)}
+                                    style={[
+                                        styles.chip,
+                                        form.location === l
+                                            ? { backgroundColor: colors.primaryInk, borderColor: colors.primaryInk }
+                                            : { backgroundColor: colors.primarySurface, borderColor: colors.border },
+                                    ]}
+                                >
+                                    <Text style={[styles.chipText, { color: form.location === l ? '#fff' : colors.textMuted }]}>{l}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                    </View>
+
+                    {/* Expiry + Quantity */}
+                    <View style={styles.row2}>
+                        <View style={[styles.field, styles.flex1]}>
+                            <Text style={[styles.fieldLabel, { color: colors.text }]}>Expiry date</Text>
+                            <TextInput
+                                style={[inputStyle, styles.textInput]}
+                                placeholder="e.g. May 10, 2026"
+                                placeholderTextColor={colors.textMuted}
+                                value={form.expiryDate}
+                                onChangeText={v => updateForm('expiryDate', v)}
+                            />
+                        </View>
+                        <View style={[styles.field, styles.flex1]}>
+                            <Text style={[styles.fieldLabel, { color: colors.text }]}>Quantity</Text>
+                            <TextInput
+                                style={[inputStyle, styles.textInput]}
+                                placeholder="e.g. 2L"
+                                placeholderTextColor={colors.textMuted}
+                                value={form.quantity}
+                                onChangeText={v => updateForm('quantity', v)}
+                            />
+                        </View>
+                    </View>
+
+                    {/* Submit */}
+                    <TouchableOpacity
+                        style={[
+                            styles.primaryBtn,
+                            { backgroundColor: form.name.trim() ? colors.primaryInk : colors.border, marginTop: 8 },
+                        ]}
+                        onPress={handleManualSubmit}
+                        disabled={!form.name.trim()}
+                    >
+                        <Ionicons name="add-circle-outline" size={18} color={form.name.trim() ? '#fff' : colors.textMuted} />
+                        <Text style={[styles.primaryBtnText, { color: form.name.trim() ? '#fff' : colors.textMuted }]}>
+                            Add to fridge
+                        </Text>
+                    </TouchableOpacity>
+                </View>
             </ScrollView>
-
-            <View style={[styles.bottomActions, { borderTopColor: colors.border, backgroundColor: colors.secondarySurface }]}>
-                <TouchableOpacity style={[styles.cancelButton, { backgroundColor: colors.border }]} onPress={handleRetry}>
-                    <Text style={[styles.cancelButtonText, { color: colors.primaryInk }]}>Scan Again</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[
-                        styles.saveButton,
-                        { backgroundColor: colors.primaryInk },
-                        extractedItems.filter(i => i.selected).length === 0 && { backgroundColor: colors.textMuted },
-                    ]}
-                    onPress={handleSaveItems}
-                    disabled={extractedItems.filter(i => i.selected).length === 0}
-                >
-                    <Ionicons name="checkmark" size={20} color={colors.canvas} />
-                    <Text style={[styles.saveButtonText, { color: colors.canvas }]}>
-                        Save ({extractedItems.filter(i => i.selected).length})
-                    </Text>
-                </TouchableOpacity>
-            </View>
         </SafeAreaView>
     );
 }
 
+// ── Mode toggle component ──────────────────────────────────────────────────────
+
+interface ModeToggleProps {
+    mode: ScanMode;
+    onSwitch: (m: ScanMode) => void;
+    colors: ReturnType<typeof useThemeColors>;
+}
+
+function ModeToggle({ mode, onSwitch, colors }: ModeToggleProps) {
+    return (
+        <View style={[styles.modeToggle, { backgroundColor: colors.secondarySurface }]}>
+            {([
+                { id: 'manual' as ScanMode, label: 'Manual entry', icon: 'pencil-outline' },
+                { id: 'scan' as ScanMode, label: 'Scan receipt', icon: 'scan-outline' },
+            ] as const).map(m => {
+                const active = mode === m.id;
+                return (
+                    <TouchableOpacity
+                        key={m.id}
+                        onPress={() => onSwitch(m.id)}
+                        style={[
+                            styles.modeBtn,
+                            active && { backgroundColor: colors.primarySurface, ...expiria.shadows.soft },
+                        ]}
+                    >
+                        <Ionicons name={m.icon} size={14} color={active ? colors.primaryInk : colors.textMuted} />
+                        <Text style={[styles.modeBtnText, { color: active ? colors.primaryInk : colors.textMuted }]}>
+                            {m.label}
+                        </Text>
+                    </TouchableOpacity>
+                );
+            })}
+        </View>
+    );
+}
+
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
+    container: { flex: 1 },
+    scroll: { flex: 1 },
+    scrollContent: {
+        paddingHorizontal: 20,
+        paddingTop: 16,
+        paddingBottom: 40,
+        gap: 20,
     },
-    processingSubtext: {
-        textAlign: 'center',
-        fontSize: expiria.typography.sizes.caption + 1,
-        marginTop: -60,
-        paddingHorizontal: expiria.spacing.lg - 4,
-    },
-    errorContainer: {
+    center: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        padding: expiria.spacing.xl,
+        padding: 32,
+        gap: 16,
     },
-    errorTitle: {
-        fontSize: expiria.typography.sizes.subheading,
-        fontWeight: expiria.typography.weights.semibold,
-        marginTop: expiria.spacing.md,
-    },
-    errorText: {
-        fontSize: expiria.typography.sizes.caption + 1,
+    processingNote: {
         textAlign: 'center',
-        marginTop: expiria.spacing.sm,
-        lineHeight: 20,
+        fontSize: 13,
+        marginTop: -60,
+        paddingHorizontal: 24,
     },
-    retryButton: {
+
+    // Mode toggle
+    modeToggle: {
+        flexDirection: 'row',
+        borderRadius: expiria.borderRadius.md,
+        padding: 3,
+    },
+    modeToggleOverlay: {
+        position: 'absolute',
+        top: 16,
+        left: 20,
+        right: 20,
+        zIndex: 10,
+    },
+    modeBtn: {
+        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: expiria.spacing.lg,
-        paddingVertical: expiria.spacing.sm + 4,
+        justifyContent: 'center',
+        gap: 6,
+        paddingVertical: 9,
         borderRadius: expiria.borderRadius.sm,
-        marginTop: expiria.spacing.lg,
-        gap: expiria.spacing.sm,
     },
-    retryButtonText: {
-        fontSize: expiria.typography.sizes.body,
-        fontWeight: expiria.typography.weights.semibold,
+    modeBtnText: { fontSize: 13, fontWeight: '600' },
+
+    // Form
+    formSection: { gap: 16 },
+    field: { gap: 6 },
+    fieldLabel: { fontSize: 12, fontWeight: '600' },
+    textInput: { paddingHorizontal: 12, paddingVertical: 10 },
+    row2: { flexDirection: 'row', gap: 12 },
+    flex1: { flex: 1 },
+    chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    chipScroll: { maxHeight: 36 },
+    chipScrollContent: { gap: 8, paddingRight: 4 },
+    chip: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: expiria.borderRadius.full,
+        borderWidth: 1,
     },
-    confirmContainer: {
+    chipText: { fontSize: 12, fontWeight: '500' },
+
+    // Buttons
+    primaryBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        paddingVertical: 14,
+        borderRadius: expiria.borderRadius.md,
+    },
+    primaryBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+    outlineBtn: {
         flex: 1,
-        padding: expiria.spacing.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 13,
+        borderRadius: expiria.borderRadius.sm,
+        borderWidth: 1,
     },
-    confirmTitle: {
-        fontSize: expiria.typography.sizes.heading - 4,
-        fontWeight: expiria.typography.weights.bold,
-        marginBottom: expiria.spacing.xs,
+    outlineBtnText: { fontSize: 14, fontWeight: '600' },
+    ghostBtnText: { fontSize: 14, marginTop: 4 },
+
+    // Success
+    successIcon: {
+        width: 72,
+        height: 72,
+        borderRadius: 36,
+        borderWidth: 2,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    confirmSubtitle: {
-        fontSize: expiria.typography.sizes.caption + 1,
-        marginBottom: expiria.spacing.lg - 4,
-    },
+    successTitle: { fontSize: 22, fontWeight: '600' },
+    successMsg: { fontSize: 14, textAlign: 'center', lineHeight: 22 },
+
+    // Confirm scan
+    confirmTitle: { fontSize: 20, fontWeight: '600' },
+    confirmSub: { fontSize: 13, marginTop: 4, marginBottom: 8 },
     itemCard: {
         flexDirection: 'row',
         alignItems: 'center',
-        borderRadius: expiria.borderRadius.sm + 4,
-        padding: expiria.spacing.sm + 4,
-        marginBottom: expiria.spacing.sm + 4,
-        ...expiria.shadows.soft,
+        borderRadius: expiria.borderRadius.md,
+        borderWidth: 1,
+        padding: 12,
+        marginBottom: 10,
     },
-    checkbox: {
-        marginRight: expiria.spacing.sm + 4,
-    },
-    itemContent: {
-        flex: 1,
-    },
-    itemNameInput: {
-        fontSize: expiria.typography.sizes.body,
-        fontWeight: expiria.typography.weights.semibold,
-        padding: 0,
-        marginBottom: expiria.spacing.xs,
-    },
-    itemExpiry: {
-        fontSize: expiria.typography.sizes.caption,
-        marginBottom: expiria.spacing.xs,
-    },
-    confidenceBadge: {
-        paddingHorizontal: expiria.spacing.sm,
-        paddingVertical: 2,
-        borderRadius: expiria.borderRadius.sm / 2,
-        alignSelf: 'flex-start',
-    },
-    confidenceText: {
-        fontSize: expiria.typography.sizes.small,
-    },
-    removeButton: {
-        padding: expiria.spacing.xs,
-    },
-    emptyItems: {
-        alignItems: 'center',
-        padding: expiria.spacing.xl,
-    },
-    emptyItemsText: {
-        fontSize: expiria.typography.sizes.body,
-        marginBottom: expiria.spacing.md,
-    },
-    scanAgainButton: {
-        paddingHorizontal: expiria.spacing.lg - 4,
-        paddingVertical: expiria.spacing.sm + 2,
-        borderRadius: expiria.borderRadius.sm,
-    },
-    scanAgainText: {
-        fontSize: expiria.typography.sizes.caption + 1,
-        fontWeight: expiria.typography.weights.medium,
-    },
-    bottomActions: {
+    checkbox: { marginRight: 12 },
+    itemContent: { flex: 1 },
+    itemNameInput: { fontSize: 14, fontWeight: '600', padding: 0, marginBottom: 4 },
+    itemExpiry: { fontSize: 12 },
+    removeBtn: { padding: 4 },
+
+    // Bottom bar (confirm state)
+    bottomBar: {
         flexDirection: 'row',
-        padding: expiria.spacing.md,
-        gap: expiria.spacing.sm + 4,
-        borderTopWidth: expiria.strokes.thin,
-    },
-    cancelButton: {
-        flex: 1,
-        paddingVertical: expiria.spacing.sm + 6,
-        borderRadius: expiria.borderRadius.sm,
-        alignItems: 'center',
-    },
-    cancelButtonText: {
-        fontSize: expiria.typography.sizes.body,
-        fontWeight: expiria.typography.weights.semibold,
-    },
-    saveButton: {
-        flex: 1,
-        flexDirection: 'row',
-        paddingVertical: expiria.spacing.sm + 6,
-        borderRadius: expiria.borderRadius.sm,
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: expiria.spacing.sm,
-    },
-    saveButtonText: {
-        fontSize: expiria.typography.sizes.body,
-        fontWeight: expiria.typography.weights.semibold,
+        padding: 16,
+        gap: 12,
+        borderTopWidth: 1,
     },
 });

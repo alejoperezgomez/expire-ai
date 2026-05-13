@@ -1,11 +1,29 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Pressable } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Pressable, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { TrafficLightStatus } from '../types';
 import { formatDate } from '../utils/dateUtils';
 import { ExpirationBadge } from './ExpirationBadge';
 import { expiria } from '../theme';
 import { useThemeColors } from '../context/ThemeContext';
+
+const CATEGORY_EMOJI: Record<string, string> = {
+    'Dairy': '🥛',
+    'Produce': '🥬',
+    'Meat': '🍗',
+    'Seafood': '🐟',
+    'Pantry': '🫙',
+    'Frozen': '❄️',
+    'Beverage': '🧃',
+    'Bakery': '🍞',
+    'Leftovers': '🍱',
+    'Condiments': '🥫',
+};
+
+function getCategoryEmoji(category?: string): string {
+    if (!category) return '🍽️';
+    return CATEGORY_EMOJI[category] ?? '🍽️';
+}
 
 interface FoodCardProps {
     id: string;
@@ -15,9 +33,19 @@ interface FoodCardProps {
     status: TrafficLightStatus;
     daysUntilExpiration: number;
     isEstimated: boolean;
+    category?: string;
+    location?: string;
+    quantity?: string;
+    variant?: 'list' | 'grid';
     onPress: () => void;
     onDelete: () => void;
 }
+
+const STATUS_STRIP: Record<TrafficLightStatus, string> = {
+    green: '#4a8840',
+    yellow: '#b07d00',
+    red: '#c85e28',
+};
 
 export function FoodCard({
     name,
@@ -26,112 +54,174 @@ export function FoodCard({
     status,
     daysUntilExpiration,
     isEstimated,
+    category,
+    location,
+    quantity,
+    variant = 'list',
     onPress,
     onDelete,
 }: FoodCardProps) {
     const colors = useThemeColors();
+    const stripColor = daysUntilExpiration < 0 ? '#c0392b' : STATUS_STRIP[status];
+    const emoji = getCategoryEmoji(category);
+
+    if (variant === 'grid') {
+        return (
+            <TouchableOpacity
+                style={[styles.gridCard, { backgroundColor: colors.primarySurface, borderColor: colors.border }]}
+                onPress={onPress}
+                activeOpacity={0.75}
+            >
+                {/* Status strip at top */}
+                <View style={[styles.gridStrip, { backgroundColor: stripColor }]} />
+
+                <View style={styles.gridContent}>
+                    {/* Category / location overline */}
+                    <Text style={[styles.gridOverline, { color: colors.textMuted }]} numberOfLines={1}>
+                        {[category, location].filter(Boolean).join(' · ') || formatDate(purchaseDate)}
+                    </Text>
+
+                    {/* Name */}
+                    <Text style={[styles.gridName, { color: colors.text }]} numberOfLines={2}>
+                        {name}
+                    </Text>
+
+                    {/* Quantity */}
+                    <Text style={[styles.gridQty, { color: colors.textMuted }]} numberOfLines={1}>
+                        {quantity || ' '}
+                    </Text>
+
+                    {/* Badge + date row */}
+                    <View style={styles.gridFooter}>
+                        <ExpirationBadge status={status} daysUntilExpiration={daysUntilExpiration} size="sm" />
+                    </View>
+                </View>
+            </TouchableOpacity>
+        );
+    }
+
+    // List variant
+    const iconBg = {
+        green: colors.statusGreenBg,
+        yellow: colors.statusYellowBg,
+        red: daysUntilExpiration < 0 ? colors.statusExpiredBg : colors.statusRedBg,
+    }[status];
 
     return (
         <TouchableOpacity
-            style={[styles.card, { backgroundColor: colors.secondarySurface }]}
+            style={[styles.listCard, { backgroundColor: colors.primarySurface, borderColor: colors.border }]}
             onPress={onPress}
-            activeOpacity={0.7}
+            activeOpacity={0.75}
         >
-            <View style={styles.content}>
-                <View style={styles.header}>
-                    <Text style={[styles.name, { color: colors.primaryInk }]} numberOfLines={1}>
-                        {name}
-                    </Text>
-                    <Pressable
-                        style={styles.deleteButton}
-                        onPress={(e) => {
-                            e.stopPropagation();
-                            onDelete();
-                        }}
-                        hitSlop={8}
-                    >
-                        <Ionicons name="trash-outline" size={20} color={colors.textMuted} />
-                    </Pressable>
-                </View>
+            {/* Emoji icon */}
+            <View style={[styles.listIcon, { backgroundColor: iconBg }]}>
+                <Text style={styles.listEmoji}>{emoji}</Text>
+            </View>
 
-                <View style={styles.dates}>
-                    <View style={styles.dateRow}>
-                        <Text style={[styles.dateLabel, { color: colors.textMuted }]}>Purchased:</Text>
-                        <Text style={[styles.dateValue, { color: colors.primaryInk }]}>{formatDate(purchaseDate)}</Text>
-                    </View>
-                    <View style={styles.dateRow}>
-                        <Text style={[styles.dateLabel, { color: colors.textMuted }]}>Expires:</Text>
-                        <Text style={[styles.dateValue, { color: colors.primaryInk }]}>{formatDate(expirationDate)}</Text>
-                        {isEstimated && (
-                            <View style={[styles.estimatedBadge, { backgroundColor: colors.border }]}>
-                                <Text style={[styles.estimatedText, { color: colors.textMuted }]}>Est.</Text>
-                            </View>
-                        )}
-                    </View>
-                </View>
+            {/* Content */}
+            <View style={styles.listBody}>
+                <Text style={[styles.listName, { color: colors.text }]} numberOfLines={1}>
+                    {name}
+                </Text>
+                <Text style={[styles.listMeta, { color: colors.textMuted }]} numberOfLines={1}>
+                    {[quantity, location].filter(Boolean).join(' · ') || formatDate(purchaseDate)}
+                </Text>
+            </View>
 
-                <View style={styles.footer}>
-                    <ExpirationBadge status={status} daysUntilExpiration={daysUntilExpiration} />
-                </View>
+            {/* Badge + delete */}
+            <View style={styles.listRight}>
+                <ExpirationBadge status={status} daysUntilExpiration={daysUntilExpiration} size="sm" />
+                <Pressable
+                    style={styles.deleteButton}
+                    onPress={(e) => {
+                        e.stopPropagation();
+                        onDelete();
+                    }}
+                    hitSlop={8}
+                >
+                    <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
+                </Pressable>
             </View>
         </TouchableOpacity>
     );
 }
 
-
 const styles = StyleSheet.create({
-    card: {
-        borderRadius: expiria.borderRadius.lg,
-        marginHorizontal: expiria.spacing.md,
-        marginVertical: expiria.spacing.xs + 2,
+    // — List variant —
+    listCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        borderRadius: expiria.borderRadius.md,
+        borderWidth: 1,
+        padding: 12,
         ...expiria.shadows.card,
     },
-    content: {
-        padding: expiria.spacing.md,
-    },
-    header: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
+    listIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: 10,
         alignItems: 'center',
-        marginBottom: expiria.spacing.sm + 4,
+        justifyContent: 'center',
+        flexShrink: 0,
     },
-    name: {
-        fontSize: expiria.typography.sizes.subheading - 2,
-        fontWeight: expiria.typography.weights.semibold,
+    listEmoji: {
+        fontSize: 20,
+    },
+    listBody: {
         flex: 1,
-        marginRight: expiria.spacing.sm,
+        minWidth: 0,
+    },
+    listName: {
+        fontSize: 14,
+        fontWeight: '600',
+        marginBottom: 2,
+    },
+    listMeta: {
+        fontSize: 11,
+    },
+    listRight: {
+        alignItems: 'flex-end',
+        gap: 6,
+        flexShrink: 0,
     },
     deleteButton: {
         padding: expiria.spacing.xs,
     },
-    dates: {
-        marginBottom: expiria.spacing.sm + 4,
+
+    // — Grid variant —
+    gridCard: {
+        flex: 1,
+        borderRadius: expiria.borderRadius.md,
+        borderWidth: 1,
+        overflow: 'hidden',
+        ...expiria.shadows.card,
     },
-    dateRow: {
+    gridStrip: {
+        height: 5,
+    },
+    gridContent: {
+        padding: 12,
+    },
+    gridOverline: {
+        fontSize: 9,
+        fontWeight: '700',
+        letterSpacing: 0.08,
+        textTransform: 'uppercase',
+        marginBottom: 3,
+    },
+    gridName: {
+        fontSize: Platform.select({ ios: 15, android: 14 }) ?? 15,
+        fontWeight: '600',
+        marginBottom: 2,
+        lineHeight: 20,
+    },
+    gridQty: {
+        fontSize: 11,
+        marginBottom: 10,
+    },
+    gridFooter: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: expiria.spacing.xs,
-    },
-    dateLabel: {
-        fontSize: expiria.typography.sizes.caption + 1,
-        width: 80,
-    },
-    dateValue: {
-        fontSize: expiria.typography.sizes.caption + 1,
-        fontWeight: expiria.typography.weights.medium,
-    },
-    estimatedBadge: {
-        paddingHorizontal: expiria.spacing.xs + 2,
-        paddingVertical: 2,
-        borderRadius: expiria.borderRadius.sm / 2,
-        marginLeft: expiria.spacing.sm,
-    },
-    estimatedText: {
-        fontSize: expiria.typography.sizes.small,
-        fontWeight: expiria.typography.weights.medium,
-    },
-    footer: {
-        flexDirection: 'row',
-        justifyContent: 'flex-start',
     },
 });

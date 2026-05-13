@@ -6,6 +6,9 @@ export interface FoodItem {
     purchaseDate: string; // ISO date string
     expirationDate: string; // ISO date string
     isEstimated: boolean;
+    category?: string;  // e.g. 'Dairy', 'Produce', 'Meat'
+    location?: string;  // e.g. 'Fridge', 'Freezer', 'Pantry'
+    quantity?: string;  // e.g. '2L', '500g'
     imageUrl?: string;
     createdAt: string;
     updatedAt: string;
@@ -16,6 +19,9 @@ export interface CreateFoodItemInput {
     purchaseDate: string;
     expirationDate: string;
     isEstimated?: boolean;
+    category?: string;
+    location?: string;
+    quantity?: string;
 }
 
 export interface UpdateFoodItemInput {

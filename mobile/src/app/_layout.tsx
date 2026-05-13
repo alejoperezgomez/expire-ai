@@ -20,13 +20,13 @@ function RootLayoutInner() {
           screenOptions={{
             headerStyle: { backgroundColor: colors.primarySurface },
             headerTitleStyle: {
-              color: colors.primaryInk,
-              fontWeight: expiria.typography.weights.semibold,
-              fontSize: expiria.typography.sizes.subheading,
+              color: colors.text,
+              fontWeight: '600',
+              fontSize: 17,
             },
             headerTintColor: colors.primaryInk,
             headerShadowVisible: false,
-            contentStyle: { backgroundColor: colors.primarySurface },
+            contentStyle: { backgroundColor: colors.canvas },
           }}
         >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
